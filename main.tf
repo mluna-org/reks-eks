@@ -120,7 +120,8 @@ resource "aws_cloudwatch_log_group" "this" {
 ################################################################################
 
 module "kms" {
-  source  = "bitbucket.org/mauro_luna/reks-ebs_kms_key"
+  source = "git@github.com:mluna-org/reks-ebs_kms_key.git"
+  #source  = "bitbucket.org/mauro_luna/reks-ebs_kms_key"
   #source  = "terraform-aws-modules/kms/aws"
   #version = "1.1.0" # Note - be mindful of Terraform/provider version compatibility between modules
 
