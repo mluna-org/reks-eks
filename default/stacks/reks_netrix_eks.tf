@@ -1,4 +1,4 @@
-module "reks_netrix" {
+module "reks_netrix_eks" {
   source = "../../"
 
   # EKS
