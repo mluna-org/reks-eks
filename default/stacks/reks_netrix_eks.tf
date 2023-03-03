@@ -1,11 +1,42 @@
+locals {
+  
+  aws_account_id = "318949518667"
+  environment    = "dev"
+  region         = "us-east-1"
+  cluster_version = "1.24"
+}
+
+data "aws_caller_identity" "current" {}
+data "aws_partition" "current" {}
+data "aws_route53_zone" "external" {}
+data "aws_route53_zone" "internal" {}
+data "aws_iam_role" "worker_group_cpu" {}
+data "aws_kms_key" "kms_ebs" {}
+data "aws_kms_key" "kms_ecr" {}
+
+data "terraform_remote_state" "vpc" {
+    backend = "s3"
+    config  = {
+        bucket  = "terraform-state-robotize-eks-modules-dev"
+        key     = "terraform/dev/vpc.tfstate"
+        region  = "us-east-1"
+    }
+}
+
+data "aws_ami" "eks_default" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["amazon-eks-node-${local.cluster_version}-v*"]
+  }
+}
+
 module "reks_netrix_eks" {
   source = "../../"
 
   # EKS
-
-  aws_account_id = "318949518667"
-  environment    = "dev"
-  region         = "us-east-1"
 
   k8s_resources = {
     "external-dns" = {
@@ -55,7 +86,7 @@ module "reks_netrix_eks" {
 
   eks_cluster = {
     name                               = "eks-new"
-    cluster_version                    = "1.24"
+    cluster_version                    = local.cluster_version
     enable_irsa                        = true
     manage_aws_auth                    = true
     cluster_endpoint_private_access    = true
@@ -78,26 +109,26 @@ module "reks_netrix_eks" {
     worker_group_spot_root_volume_type = "gp3"
     worker_group_spot_root_encrypted   = true
     aws_auth_roles = [
-      {
-        rolearn  = "arn:aws:iam::858348520904:role/REKS-GitHub-Actions" # Edit to assign roles that require authentication to EKS
-        username = ""
-        groups   = ["system:masters"]
-      },
-      {
-        rolearn  = "arn:aws:iam::858348520904:role/AWSReservedSSO_AWS_KRATOS_QA_e1c4e9188334c572" # Edit to assign roles that require authentication to EKS. When usign SSO role, remember to delete the characters "aws-reserved/sso.amazonaws.com/" that are included in the arn of the role.
-        username = ""
-        groups   = ["system:masters"]
-      },
-      {
-        rolearn  = "arn:aws:iam::858348520904:role/REKS-deployer" # Edit to assign roles that require authentication to EKS
-        username = ""
-        groups   = ["system:masters"]
-      },
-      {
-        rolearn  = "arn:aws:iam::858348520904:role/AWSReservedSSO_AWS_APOLO_QA_79caff9dc6b9fca5" # Edit to assign roles that require authentication to EKS. When usign SSO role, remember to delete the characters "aws-reserved/sso.amazonaws.com/" that are included in the arn of the role.
-        username = ""
-        groups   = ["Readonly-Group"]
-      }
+      # {
+      #   rolearn  = "arn:aws:iam::858348520904:role/REKS-GitHub-Actions" # Edit to assign roles that require authentication to EKS
+      #   username = ""
+      #   groups   = ["system:masters"]
+      # },
+      # {
+      #   rolearn  = "arn:aws:iam::858348520904:role/AWSReservedSSO_AWS_KRATOS_QA_e1c4e9188334c572" # Edit to assign roles that require authentication to EKS. When usign SSO role, remember to delete the characters "aws-reserved/sso.amazonaws.com/" that are included in the arn of the role.
+      #   username = ""
+      #   groups   = ["system:masters"]
+      # },
+      # {
+      #   rolearn  = "arn:aws:iam::858348520904:role/REKS-deployer" # Edit to assign roles that require authentication to EKS
+      #   username = ""
+      #   groups   = ["system:masters"]
+      # },
+      # {
+      #   rolearn  = "arn:aws:iam::858348520904:role/AWSReservedSSO_AWS_APOLO_QA_79caff9dc6b9fca5" # Edit to assign roles that require authentication to EKS. When usign SSO role, remember to delete the characters "aws-reserved/sso.amazonaws.com/" that are included in the arn of the role.
+      #   username = ""
+      #   groups   = ["Readonly-Group"]
+      # }
 
     ]
     aws_auth_users = [
@@ -105,54 +136,55 @@ module "reks_netrix_eks" {
   }
 
   # IAM roles policies
-  external_secrets_policy = templatefile("${find_in_parent_folders()}/../../../templates/aws_iam_role_policy_external_secrets.tpl", {
-    region      = local.environment_vars.region
-    account_id  = local.environment_vars.aws_account_id
-    environment = local.environment_vars.environment
+  external_secrets_policy = templatefile("aws_iam_role_policy_external_secrets.tpl", {
+    region      = local.region
+    account_id  = local.aws_account_id
+    environment = local.environment
   })
-  external_dns_policy = templatefile("${find_in_parent_folders()}/../../../templates/aws_iam_role_policy_external_dns.tpl", {
-    public_hosted_zone_id = dependency.route53.outputs.public_zone_id, private_hosted_zone_id = dependency.route53.outputs.private_zone_id
+  external_dns_policy = templatefile("aws_iam_role_policy_external_dns.tpl", {
+                                      public_hosted_zone_id = "${data.aws_route53_zone.external.zone_id}"
+                                      private_hosted_zone_id = "${data.aws_route53_zone.internal.zone_id}"
   })
-  cluster_autoscaler_policy       = file("${find_in_parent_folders()}/../../../templates/aws_iam_role_policy_cluster_autoscaler.tpl")
-  load_balancer_controller_policy = file("${find_in_parent_folders()}/../../../templates/aws_iam_role_policy_load_balancer_controller.tpl")
-  #ebs_csi_policy                  = file("${find_in_parent_folders()}/../../../templates/aws_iam_policy_ebs_csi.tpl")
-  ebs_csi_policy = jsonencode({
-    "Version" : "2012-10-17",
-    "Statement" : [
-      {
-        "Effect" : "Allow",
-        "Action" : [
-          "ec2:AttachVolume",
-          "ec2:CreateSnapshot",
-          "ec2:CreateTags",
-          "ec2:CreateVolume",
-          "ec2:DeleteSnapshot",
-          "ec2:DeleteTags",
-          "ec2:DeleteVolume",
-          "ec2:DescribeAvailabilityZones",
-          "ec2:DescribeInstances",
-          "ec2:DescribeSnapshots",
-          "ec2:DescribeTags",
-          "ec2:DescribeVolumes",
-          "ec2:DescribeVolumesModifications",
-          "ec2:DetachVolume",
-          "ec2:ModifyVolume"
-        ],
-        "Resource" : "*"
-      }
-    ]
-  })
+  cluster_autoscaler_policy       = file("aws_iam_role_policy_cluster_autoscaler.tpl")
+  load_balancer_controller_policy = file("aws_iam_role_policy_load_balancer_controller.tpl")
+  ebs_csi_policy                  = file("aws_iam_policy_ebs_csi.tpl")
+  # ebs_csi_policy = jsonencode({
+  #   "Version" : "2012-10-17",
+  #   "Statement" : [
+  #     {
+  #       "Effect" : "Allow",
+  #       "Action" : [
+  #         "ec2:AttachVolume",
+  #         "ec2:CreateSnapshot",
+  #         "ec2:CreateTags",
+  #         "ec2:CreateVolume",
+  #         "ec2:DeleteSnapshot",
+  #         "ec2:DeleteTags",
+  #         "ec2:DeleteVolume",
+  #         "ec2:DescribeAvailabilityZones",
+  #         "ec2:DescribeInstances",
+  #         "ec2:DescribeSnapshots",
+  #         "ec2:DescribeTags",
+  #         "ec2:DescribeVolumes",
+  #         "ec2:DescribeVolumesModifications",
+  #         "ec2:DetachVolume",
+  #         "ec2:ModifyVolume"
+  #       ],
+  #       "Resource" : "*"
+  #     }
+  #   ]
+  # })
 
-  efs_csi_policy    = file("${find_in_parent_folders()}/../../../templates/aws_iam_policy_efs_csi.tpl")
-  fluent_bit_policy = file("${find_in_parent_folders()}/../../../templates/aws_iam_role_policy_fluent_bit.tpl")
+  efs_csi_policy    = file("aws_iam_policy_efs_csi.tpl")
+  fluent_bit_policy = file("aws_iam_role_policy_fluent_bit.tpl")
 
   # Infrastructure values
-  vpc_id             = dependency.vpc.outputs.vpc_id
-  private_subnet_ids = dependency.vpc.outputs.private_subnet_ids
+  vpc_id             = data.terraform_remote_state.vpc.outputs.vpc_id
+  private_subnet_ids = data.terraform_remote_state.vpc.outputs.private_subnet_ids
 
   kms_keys = {
-    ebs = dependency.kms.outputs.ebs_kms_arn
-    ecr = dependency.kms.outputs.ecr_kms_arn
+    ebs = "${data.aws_kms_key.kms_ebs.ebs_kms_arn}"
+    ecr = "${data.aws_kms_key.kms_ecr.ecr_kms_arn}"
   }
 
   ### TAGS
@@ -213,7 +245,7 @@ module "reks_netrix_eks" {
 
       enable_monitoring = false
       create_iam_role   = false
-      iam_role_arn      = aws_iam_role.worker_group_cpu.arn
+      iam_role_arn      = "${data.aws_iam_role.worker_group_cpu.arn}"
 
       create_security_group          = true
       security_group_name            = "eks-managed-ng"
@@ -263,7 +295,7 @@ module "reks_netrix_eks" {
 
       enable_monitoring = false
       create_iam_role   = false
-      iam_role_arn      = aws_iam_role.worker_group_cpu.arn
+      iam_role_arn      = "${data.aws_iam_role.worker_group_cpu.arn}"
 
       create_security_group          = true
       security_group_name            = "eks-managed-ng-spot"
@@ -366,6 +398,9 @@ module "reks_netrix_eks" {
       to_port     = 0
       type        = "ingress"
       self        = true
+      cidr_blocks      = data.terraform_remote_state.vpc.outputs.cidr_blocks
+      ipv6_cidr_blocks = [""]
+      source_cluster_security_group = true
     }
     # Allow egress traffic to all destinations from the worker nodes
     egress_all = {
@@ -376,6 +411,8 @@ module "reks_netrix_eks" {
       type             = "egress"
       cidr_blocks      = ["0.0.0.0/0"]
       ipv6_cidr_blocks = ["::/0"]
+      source_cluster_security_group = true
+      self        = true
     }
     # Allow access from control plane to worker nodes
     allow_access_from_control_plane = {
@@ -383,9 +420,41 @@ module "reks_netrix_eks" {
       protocol                      = "tcp"
       from_port                     = 0
       to_port                       = 65535
-      source_cluster_security_group = true
       description                   = "Allow access from control plane to worker nodes"
+      self                          = false
+      cidr_blocks                   = data.terraform_remote_state.vpc.outputs.cidr_blocks
+      ipv6_cidr_blocks              = [""]
+      source_cluster_security_group = true
     }
   }
 
+#####
+## ROUTE53
+
+external_zone_name               = "dev.module-eks.com"
+internal_zone_name               = "dev.module-eks.internal"
+enable_external_zone_certificate = false
+certificate_subject_alternative_names = ["*.dev.module-eks.internal"]
+
+#### KMS
+
+kms_ebs = {
+  create_kms_key          = true
+  deletion_window_in_days = "30"
+  enable_key_rotation     = "true"
 }
+
+kms_ecr = {
+  create_kms_key          = true
+  deletion_window_in_days = "30"
+  enable_key_rotation     = "true"
+}
+
+# ebs_kms_policy = templatefile("aws_iam_policy_kms_ebs.tpl", {
+#                               account_id              = local.aws_account_id
+#                               asg_service_linked_role = "AWSServiceRoleForAutoScaling"
+# })
+
+}
+
+

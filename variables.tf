@@ -53,7 +53,7 @@ variable "eks_cluster" {
     cluster_endpoint_private_access    = true
     cluster_endpoint_public_access     = true
     cluster_enabled_log_types          = ["audit", "controllerManager"]
-    worker_group_cpu_name              = ""
+    worker_group_cpu_name              = "nombre"
     worker_group_spot_name             = ""
     default_instance_types             = [""]
     default_ami_type                   = ""
@@ -230,9 +230,52 @@ variable "aws_auth_users" {
 #### Agregados
 
 variable "node_security_group_additional_rules" {
-  type        = map(string)
-  description = "List of KMS keys that the eks worker group will use for encrypt/decrypt"
-  default   = {}
+  type = map(object({
+    description = string
+    protocol    = string
+    from_port   = number
+    to_port     = number
+    type        = string
+    self        = bool
+    cidr_blocks      = list(string)
+    ipv6_cidr_blocks = list(string)
+    source_cluster_security_group = bool
+  }))
+  default   = {
+    ingress_self_all = {
+      description = ""
+      protocol    = ""
+      from_port   = 0
+      to_port     = 0
+      type        = ""
+      cidr_blocks      = [""]
+      ipv6_cidr_blocks = [""]
+      self            = true
+      source_cluster_security_group = false
+    }
+    egress_all = {
+      description      = ""
+      protocol         = ""
+      from_port        = 0
+      to_port          = 0
+      type             = ""
+      cidr_blocks      = [""]
+      ipv6_cidr_blocks = [""]
+      self            = false
+      source_cluster_security_group = false
+    }
+    allow_access_from_control_plane = {
+      type                          = ""
+      protocol                      = ""
+      from_port                     = 0
+      to_port                       = 65535
+      description                   = ""
+      cidr_blocks      = [""]
+      ipv6_cidr_blocks = [""]
+      self            = false
+      source_cluster_security_group = true
+   }
+  }
 }
 
 variable "node_groups" {
@@ -279,6 +322,87 @@ variable "environment" {
   default   = ""
 }
 
+variable "region" {
+  description = "VPC ID where the EKS cluster will be deployed"
+  type        = string
+  default   = ""
+}
+
+variable "kubelet_common_settings" {
+  description = "List of user maps to add to the aws-auth configmap"
+  type        = list(any)
+  default     = []
+}
+
+####
+## ROUTE53
+
+variable "external_zone_name" {
+  description = "R53 Zone name"
+  type        = string
+  default   = ""
+}
+
+
+variable "internal_zone_name" {
+  description = "R53 Zone name"
+  type        = string
+  default   = ""
+}
+
+variable "internal" {
+  description = "Route53 Hosted Zone type"
+  type        = bool
+  default     = false
+}
+
+variable "external" {
+  description = "Route53 Hosted Zone type"
+  type        = bool
+  default     = false
+}
+
+variable "enable_external_zone_certificate" {
+  description = "This variable enables the creation of a certificate for the external zone name"
+  type        = bool
+  default     = false
+}
+
+variable "certificate_subject_alternative_names" {
+  description = "A list of domains that should be SANs in the issued certificate"
+  type        = list(string)
+  default     = []
+}
+
+### KMS
+
+variable "kms_ebs" {
+  description = "Map containing all properties for KMS EBS"
+  type = object({
+    create_kms_key          = bool
+    deletion_window_in_days = number
+    enable_key_rotation     = string
+  })
+  default = {
+    create_kms_key          = false
+    deletion_window_in_days = null
+    enable_key_rotation     = null
+  }
+}
+
+variable "kms_ecr" {
+  description = "Map containing all properties for KMS ECR"
+  type = object({
+    create_kms_key          = bool
+    deletion_window_in_days = number
+    enable_key_rotation     = string
+  })
+  default = {
+    create_kms_key          = false
+    deletion_window_in_days = null
+    enable_key_rotation     = null
+  }
+}
 
 ### PRUEBA 
 ## eks.tf
@@ -352,8 +476,15 @@ variable "environment" {
 
 # ### workers_role.tf
 
-# variable "eks_cluster_worker_group_cpu_name" {
-#   description = "VPC ID where the EKS cluster will be deployed"
-#   type        = string
-#   default   = ""
-# }
+variable "worker_group_cpu" {
+  description = "VPC ID where the EKS cluster will be deployed"
+  type = object({
+    name               = string
+    assume_role_policy = map(string)
+  })
+  default   = {
+    name               = "nombre"
+    assume_role_policy = {}
+  }
+}
+

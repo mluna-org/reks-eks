@@ -28,20 +28,10 @@ resource "aws_iam_role" "worker_group_cpu" {
   assume_role_policy = data.aws_iam_policy_document.workers_assume_role_policy.json
 }
 
-####
-#### CAMBIAR
-####
-
-
 resource "aws_iam_instance_profile" "worker_group_cpu" {
-  #name_prefix = "${var.eks_cluster["worker_group_cpu_name"]}"
-  name_prefix = "pepe"
+  name_prefix = "${var.eks_cluster["worker_group_cpu_name"]}"
   role        = aws_iam_role.worker_group_cpu.id
 }
-
-####
-#### FIN CAMBIAR
-####
 
 resource "aws_iam_role_policy_attachment" "worker_group_cpu" {
   count      = length(local.eks_worker_default_policies)

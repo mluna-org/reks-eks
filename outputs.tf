@@ -48,3 +48,31 @@ output "cluster_oidc_issuer_url_stripped" {
 output "node_security_group_id" {
   value = module.eks_cluster.node_security_group_id
 }
+
+### ROUTE53
+
+output "public_zone_id" {
+  value = aws_route53_zone.external.zone_id
+}
+
+output "public_zone_domain" {
+  value = aws_route53_zone.external.name
+}
+
+output "private_zone_id" {
+  value = aws_route53_zone.internal.zone_id
+}
+
+output "private_zone_domain" {
+  value = aws_route53_zone.internal.name
+}
+
+### KMS
+
+output "ebs_kms_arn" {
+  value = var.kms_ebs.create_kms_key ? aws_kms_key.kms_ebs[0].arn : null
+}
+
+output "ecr_kms_arn" {
+  value = var.kms_ecr.create_kms_key ? aws_kms_key.kms_ecr[0].arn : null
+}
