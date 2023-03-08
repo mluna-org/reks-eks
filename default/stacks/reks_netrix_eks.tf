@@ -3,6 +3,7 @@ locals {
   aws_account_id = "318949518667"
   environment    = "dev"
   region         = "us-east-1"
+  cluster_name = "eks-modulo"
   cluster_version = "1.24"
 }
 
@@ -10,9 +11,15 @@ data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
 data "aws_route53_zone" "external" {}
 data "aws_route53_zone" "internal" {}
-data "aws_iam_role" "worker_group_cpu" {}
-data "aws_kms_key" "kms_ebs" {}
-data "aws_kms_key" "kms_ecr" {}
+data "aws_iam_role" "worker_group_cpu" {
+  name = ""
+}
+data "aws_kms_key" "kms_ebs" {
+  key_id = ""
+}
+data "aws_kms_key" "kms_ecr" {
+  key_id = ""
+}
 
 data "terraform_remote_state" "vpc" {
     backend = "s3"
@@ -85,7 +92,7 @@ module "reks_netrix_eks" {
   }
 
   eks_cluster = {
-    name                               = "eks-new"
+    name                               = local.cluster_name
     cluster_version                    = local.cluster_version
     enable_irsa                        = true
     manage_aws_auth                    = true
@@ -355,7 +362,7 @@ module "reks_netrix_eks" {
 
       enable_monitoring = false
       create_iam_role   = false
-      iam_role_arn      = aws_iam_role.worker_group_cpu.arn
+      iam_role_arn      = "${data.aws_iam_role.worker_group_cpu.arn}"
 
       create_security_group          = false
       security_group_name            = "eks-managed-ng-spot"
